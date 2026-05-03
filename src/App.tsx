@@ -5,14 +5,28 @@
 
 import { useState, type FormEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Download, Loader2 } from 'lucide-react';
+import { Download, Loader2, Copy, Check } from 'lucide-react';
 import { generateImage, generateDescription } from './services/geminiService';
 
 export default function App() {
   const [query, setQuery] = useState('');
+  const [aspectRatio, setAspectRatio] = useState('1:1');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [result, setResult] = useState<{ image: string; text: string } | null>(null);
+  const [result, setResult] = useState<{ image: string; text: string; aspectRatio: string } | null>(null);
+  const [history, setHistory] = useState<{ query: string; image: string; text: string; aspectRatio: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
+
+  const handleCopy = async () => {
+    if (!result?.text) return;
+    try {
+      await navigator.clipboard.writeText(result.text);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text', err);
+    }
+  };
 
   const handleGenerate = async (e: FormEvent) => {
     e.preventDefault();
@@ -23,10 +37,12 @@ export default function App() {
 
     try {
       const [imageRes, textRes] = await Promise.all([
-        generateImage(query),
+        generateImage(query, aspectRatio),
         generateDescription(query)
       ]);
-      setResult({ image: imageRes, text: textRes });
+      const newResult = { image: imageRes, text: textRes, aspectRatio };
+      setResult(newResult);
+      setHistory(prev => [ { query, ...newResult }, ...prev].slice(0, 5));
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'An error occurred while generating content.');
@@ -55,22 +71,34 @@ export default function App() {
       <main className="flex-1 flex flex-col items-center py-8 px-4 md:py-12 md:px-20 overflow-y-auto">
         {/* Search Section */}
         <div className="w-full max-w-2xl mb-8 md:mb-12">
-          <form onSubmit={handleGenerate} className="relative flex items-center shadow-sm">
+          <form onSubmit={handleGenerate} className="flex flex-col sm:flex-row shadow-sm">
             <input
               type="text"
               placeholder="Enter object name (e.g., 'Vintage Camera')"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               disabled={isGenerating}
-              className="w-full h-14 pl-6 pr-32 bg-white border border-[#E5E7EB] text-lg outline-none focus:border-[#1A1A1A] transition-colors disabled:bg-gray-50"
+              className="w-full h-14 px-6 border-x border-y sm:border-r-0 border-[#E5E7EB] text-lg outline-none focus:border-[#1A1A1A] transition-colors disabled:bg-gray-50 flex-grow"
             />
-            <button
-              type="submit"
-              disabled={isGenerating || !query.trim()}
-              className="absolute right-2 h-10 px-6 bg-[#1A1A1A] text-white text-sm font-semibold uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors hover:bg-[#333]"
-            >
-              {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Generate'}
-            </button>
+            <div className="flex border-x sm:border-l-0 border-b sm:border-y border-[#E5E7EB]">
+              <select
+                value={aspectRatio}
+                onChange={(e) => setAspectRatio(e.target.value)}
+                disabled={isGenerating}
+                className="h-14 px-4 bg-white text-[#1A1A1A] text-sm font-semibold uppercase tracking-widest outline-none border-r border-[#E5E7EB] transition-colors appearance-none cursor-pointer hover:bg-gray-50 disabled:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="1:1">Square</option>
+                <option value="16:9">Wide</option>
+                <option value="9:16">Tall</option>
+              </select>
+              <button
+                type="submit"
+                disabled={isGenerating || !query.trim()}
+                className="h-14 px-8 bg-[#1A1A1A] text-white text-sm font-semibold uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors hover:bg-[#333]"
+              >
+                {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Generate'}
+              </button>
+            </div>
           </form>
           {error && (
             <div className="mt-3 text-red-600 text-sm font-medium px-2">
@@ -82,7 +110,7 @@ export default function App() {
         {/* Content Display (Geometric Split) */}
         <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-12 gap-0 border border-[#E5E7EB] bg-white shadow-sm transition-all duration-500">
           {/* Image Side */}
-          <div className="col-span-1 md:col-span-7 aspect-square bg-[#F3F4F6] relative overflow-hidden flex items-center justify-center group border-b md:border-b-0 md:border-r border-[#E5E7EB]">
+          <div className={`col-span-1 md:col-span-7 bg-[#F3F4F6] relative overflow-hidden flex items-center justify-center group border-b md:border-b-0 md:border-r border-[#E5E7EB] transition-all duration-500 ${!result || result.aspectRatio === '1:1' ? 'aspect-square' : result.aspectRatio === '16:9' ? 'aspect-video' : 'aspect-[9/16]'}`}>
             <div className="absolute inset-0 bg-gradient-to-br from-slate-200 to-slate-300 opacity-50 z-0"></div>
             
             <AnimatePresence mode="wait">
@@ -143,9 +171,18 @@ export default function App() {
                   <div className="h-[1px] w-12 bg-[#1A1A1A]"></div>
 
                   <div className="space-y-4">
-                    <p className="text-[#4B5563] text-lg leading-relaxed">
-                      {result.text}
-                    </p>
+                    <div className="relative group/copy">
+                      <p className="text-[#4B5563] text-lg leading-relaxed pr-8">
+                        {result.text}
+                      </p>
+                      <button
+                        onClick={handleCopy}
+                        className="absolute top-0 right-0 p-1.5 text-gray-400 hover:text-gray-900 transition-colors bg-white/80 backdrop-blur rounded-md"
+                        title="Copy description"
+                      >
+                        {isCopied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="pt-8 flex gap-4">
@@ -188,6 +225,38 @@ export default function App() {
             </AnimatePresence>
           </div>
         </div>
+
+        {/* History Section */}
+        {history.length > 0 && (
+          <div className="w-full max-w-5xl mt-12 mb-8">
+            <h3 className="text-[10px] uppercase tracking-[0.2em] text-[#9CA3AF] font-bold mb-6">Recent Archives</h3>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              {history.map((item, idx) => (
+                <div 
+                  key={idx} 
+                  className="group cursor-pointer border border-[#E5E7EB] bg-white hover:border-[#1A1A1A] transition-colors"
+                  onClick={() => {
+                    setQuery(item.query);
+                    setAspectRatio(item.aspectRatio);
+                    setResult({ image: item.image, text: item.text, aspectRatio: item.aspectRatio });
+                  }}
+                >
+                  <div className={`w-full overflow-hidden bg-[#F3F4F6] ${item.aspectRatio === '1:1' ? 'aspect-square' : item.aspectRatio === '16:9' ? 'aspect-video' : 'aspect-[9/16]'}`}>
+                    <img 
+                      src={item.image} 
+                      alt={item.query} 
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                  <div className="p-3 border-t border-[#E5E7EB]">
+                    <p className="text-xs font-semibold uppercase tracking-wide truncate">{item.query}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Footer Decorative Element */}

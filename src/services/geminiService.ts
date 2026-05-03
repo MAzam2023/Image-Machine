@@ -2,7 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-export async function generateImage(objectName: string): Promise<string> {
+export async function generateImage(objectName: string, aspectRatio: string = "1:1"): Promise<string> {
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash-image',
     contents: {
@@ -12,6 +12,11 @@ export async function generateImage(objectName: string): Promise<string> {
         },
       ],
     },
+    config: {
+      imageConfig: {
+        aspectRatio: aspectRatio as any,
+      }
+    }
   });
 
   const candidate = response.candidates?.[0];
